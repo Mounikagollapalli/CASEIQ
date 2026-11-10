@@ -110,3 +110,7 @@ npm run build
 GitHub: https://github.com/Mounikagollapalli
 
 *CaseIQ — Explainable insights. Human-led decisions.*
+
+## Deployment
+
+The Vercel project is connected to this GitHub repository. Preview deployments are intended for frontend review. The FastAPI API must be deployed separately with a persistent PostgreSQL database and matching CORS origins before the hosted workflow can process real documents.
