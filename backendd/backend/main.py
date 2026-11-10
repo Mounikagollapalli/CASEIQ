@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from pypdf import PdfReader, errors as pdf_errors
+from pypdf import PdfReader
 
 from database import Base, engine, SessionLocal, Case, Review
 import ml_service
