@@ -1,3 +1,4 @@
+import os
 import re
 from pathlib import Path
 import joblib
@@ -5,7 +6,13 @@ from sklearn.ensemble import RandomForestClassifier
 from database import Case, Review
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_FILE = BASE_DIR / "risk_model.pkl"
+# Vercel's function filesystem is read-only; /tmp is writable but temporary.
+MODEL_FILE = Path(
+    os.getenv(
+        "CASEIQ_MODEL_PATH",
+        "/tmp/caseiq_risk_model.pkl" if os.getenv("VERCEL") else str(BASE_DIR / "risk_model.pkl"),
+    )
+)
 REQUIRED_WORDS = ["name", "date", "amount", "signature", "address"]
 MIN_REVIEWS_TO_TRAIN = 10
 
@@ -14,7 +21,7 @@ def find_missing_fields(text):
     lower_text = (text or "").lower()
     return [
         word for word in REQUIRED_WORDS
-        if not re.search(r"\b" + re.escape(word) + r"\b", lower_text)
+        if not re.search(r"\\b" + re.escape(word) + r"\\b", lower_text)
     ]
 
 
@@ -22,7 +29,7 @@ def build_features(text):
     text = text or ""
     return [
         len(text.split()),
-        len(re.findall(r"\d+", text)),
+        len(re.findall(r"\\d+", text)),
         len(find_missing_fields(text)),
     ]
 
@@ -66,5 +73,9 @@ def train_model(db):
 
     model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight="balanced")
     model.fit(features, labels)
+    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, MODEL_FILE)
-    return True, "Model trained on " + str(len(labels)) + " reviewed cases."
+    message = "Model trained on " + str(len(labels)) + " reviewed cases."
+    if os.getenv("VERCEL"):
+        message += " This serverless model file is temporary and may reset after a cold start."
+    return True, message
