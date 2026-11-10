@@ -1,38 +1,73 @@
-import os
 import re
 from pathlib import Path
-import joblib
-from sklearn.ensemble import RandomForestClassifier
+
 from database import Case, Review
 
-BASE_DIR = Path(__file__).resolve().parent
-# Vercel's function filesystem is read-only; /tmp is writable but temporary.
-MODEL_FILE = Path(
-    os.getenv(
-        "CASEIQ_MODEL_PATH",
-        "/tmp/caseiq_risk_model.pkl" if os.getenv("VERCEL") else str(BASE_DIR / "risk_model.pkl"),
-    )
-)
-REQUIRED_WORDS = ["name", "date", "amount", "signature", "address"]
 MIN_REVIEWS_TO_TRAIN = 10
 
+# These checks are document-specific completeness signals, not fraud predictions.
+DOCUMENT_RULES = {
+    "resume": {
+        "fields": {
+            "Name": lambda text: len(re.findall(r"\b[A-Z][A-Z'-]{1,}\b", text[:600])) >= 2,
+            "Email address": lambda text: bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)),
+            "Phone number": lambda text: len(re.sub(r"\D", "", text)) >= 10,
+            "Education": lambda text: bool(re.search(r"education|b\.?tech|bachelor|university|college|degree|master", text, re.I)),
+            "Technical skills": lambda text: bool(re.search(r"technical skills|skills|programming|python|javascript|sql", text, re.I)),
+            "Work experience": lambda text: bool(re.search(r"work experience|professional experience|employment|experience", text, re.I)),
+            "Projects": lambda text: bool(re.search(r"projects|project experience", text, re.I)),
+        },
+        "description": "Résumé",
+    },
+    "invoice": {
+        "fields": {
+            "Invoice number": lambda text: bool(re.search(r"invoice\s*(number|no\.?|#)", text, re.I)),
+            "Invoice date": lambda text: bool(re.search(r"invoice date|date\s*:", text, re.I)),
+            "Supplier details": lambda text: bool(re.search(r"supplier|seller|from\s*:", text, re.I)),
+            "Customer details": lambda text: bool(re.search(r"bill to|billed to|customer|buyer", text, re.I)),
+            "Total amount": lambda text: bool(re.search(r"total|amount due|grand total", text, re.I)),
+        },
+        "description": "Invoice",
+    },
+    "agreement": {
+        "fields": {
+            "Parties": lambda text: bool(re.search(r"between|parties|party name", text, re.I)),
+            "Effective date": lambda text: bool(re.search(r"effective date|dated|date of this agreement", text, re.I)),
+            "Terms": lambda text: bool(re.search(r"terms|conditions|obligations", text, re.I)),
+            "Signature section": lambda text: bool(re.search(r"signature|signed by|\bsign\b", text, re.I)),
+        },
+        "description": "Agreement",
+    },
+}
 
-def find_missing_fields(text):
-    lower_text = (text or "").lower()
-    return [
-        word for word in REQUIRED_WORDS
-        if not re.search(r"\b" + re.escape(word) + r"\b", lower_text)
-    ]
+def classify_document(text):
+    content = text or ""
+    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\bresume\b|\bprojects\b", content, re.I):
+        return "resume"
+    if re.search(r"invoice|amount due|bill to|tax invoice", content, re.I):
+        return "invoice"
+    if re.search(r"agreement|terms and conditions|hereby agree|memorandum of understanding", content, re.I):
+        return "agreement"
+    return "general"
 
+def find_missing_fields(text, document_type=None):
+    content = text or ""
+    kind = document_type or classify_document(content)
+    rules = DOCUMENT_RULES.get(kind)
+    if not rules:
+        return []
+    return [label for label, check in rules["fields"].items() if not check(content)]
 
 def build_features(text):
-    text = text or ""
+    content = text or ""
+    kind = classify_document(content)
+    missing = find_missing_fields(content, kind)
     return [
-        len(text.split()),
-        len(re.findall(r"\d+", text)),
-        len(find_missing_fields(text)),
+        len(content.split()),
+        len(re.findall(r"\d+", content)),
+        len(missing),
+        {"general": 0, "resume": 1, "invoice": 2, "agreement": 3}.get(kind, 0),
     ]
-
 
 def score_to_level(score):
     if score >= 70:
@@ -41,23 +76,19 @@ def score_to_level(score):
         return "medium"
     return "low"
 
-
 def predict_risk(text):
-    """Return a transparent 0–100 completeness score and method."""
-    if MODEL_FILE.exists():
-        model = joblib.load(MODEL_FILE)
-        probabilities = model.predict_proba([build_features(text)])[0]
-        classes = list(model.classes_)
-        problem_index = classes.index(1) if 1 in classes else 0
-        score = round(float(probabilities[problem_index]) * 100, 1)
-        return score, score_to_level(score), "trained_ml_model"
-
-    missing_count = len(find_missing_fields(text))
-    score = round(missing_count / len(REQUIRED_WORDS) * 100, 1)
-    return score, score_to_level(score), "rule_based_completeness"
-
+    """Return a document-specific completeness gap indicator, not a fraud score."""
+    kind = classify_document(text)
+    rules = DOCUMENT_RULES.get(kind)
+    if not rules:
+        return None, "unclassified", "document_type_unclassified"
+    missing_count = len(find_missing_fields(text, kind))
+    total_fields = len(rules["fields"])
+    score = round(missing_count / total_fields * 100, 1) if total_fields else 0
+    return score, score_to_level(score), "document_type_completeness"
 
 def train_model(db):
+    """Experimental model training; trained output is not used for production scoring."""
     features, labels = [], []
     for review in db.query(Review).all():
         case = db.query(Case).filter(Case.id == review.case_id).first()
@@ -70,12 +101,4 @@ def train_model(db):
         return False, "At least " + str(MIN_REVIEWS_TO_TRAIN) + " reviewed cases are required. Current: " + str(len(labels)) + "."
     if len(set(labels)) < 2:
         return False, "Both approved and rejected examples are required."
-
-    model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight="balanced")
-    model.fit(features, labels)
-    MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, MODEL_FILE)
-    message = "Model trained on " + str(len(labels)) + " reviewed cases."
-    if os.getenv("VERCEL"):
-        message += " This serverless model file is temporary and may reset after a cold start."
-    return True, message
+    return False, "Training is currently disabled until a representative, validated review dataset is available."
