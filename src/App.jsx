@@ -23,6 +23,7 @@ const pageTitles = {
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedCaseId, setSelectedCaseId] = useState(null);
+  const workspaceLabel = import.meta.env.DEV ? "Local workspace" : "Cloud workspace";
 
   function changePage(page) {
     setCurrentPage(page);
@@ -58,7 +59,7 @@ function App() {
               <h1>{pageTitles[currentPage]}</h1>
               <p className="page-subtitle">Review documents, understand risk, and keep decisions human-led.</p>
             </div>
-            <span className="workspace-status"><span /> Local workspace</span>
+            <span className="workspace-status"><span /> {workspaceLabel}</span>
           </div>
           {content}
           <footer className="app-footer">CaseIQ · AI-assisted quality assurance · Human review required</footer>
