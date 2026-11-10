@@ -21,7 +21,7 @@ def find_missing_fields(text):
     lower_text = (text or "").lower()
     return [
         word for word in REQUIRED_WORDS
-        if not re.search(r"\\b" + re.escape(word) + r"\\b", lower_text)
+        if not re.search(r"\b" + re.escape(word) + r"\b", lower_text)
     ]
 
 
@@ -29,7 +29,7 @@ def build_features(text):
     text = text or ""
     return [
         len(text.split()),
-        len(re.findall(r"\\d+", text)),
+        len(re.findall(r"\d+", text)),
         len(find_missing_fields(text)),
     ]
 
