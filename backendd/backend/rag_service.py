@@ -11,7 +11,7 @@ def load_policy_chunks():
         return chunks
     for path in sorted(POLICY_FOLDER.glob("*.txt")):
         content = path.read_text(encoding="utf-8")
-        for paragraph in content.split("\\n\\n"):
+        for paragraph in content.split("\n\n"):
             paragraph = paragraph.strip()
             if len(paragraph) > 20:
                 chunks.append({"source": path.name, "text": paragraph})
