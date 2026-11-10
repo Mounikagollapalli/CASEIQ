@@ -1,0 +1,7 @@
+SAMPLE POLICY FILE - replace this with your own real company policies (.txt files).
+
+Every case document must contain the customer name, the date, the amount and the address.
+
+Every case document must be signed. A document without a signature must be sent back to the customer before it can be approved.
+
+If any required information is missing, the reviewer must request it before approving the case.
