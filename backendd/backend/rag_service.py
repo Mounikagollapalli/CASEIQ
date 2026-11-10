@@ -1,61 +1,47 @@
-# Policy retrieval (RAG - the "R" part).
-# Policies are .txt files in the policies/ folder. Each paragraph is one chunk.
-# We rank chunks with TF-IDF similarity (keyword based, no embeddings).
-
-import os
+from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-POLICY_FOLDER = "policies"
+POLICY_FOLDER = Path(__file__).resolve().parent / "policies"
 
 
 def load_policy_chunks():
     chunks = []
-    if not os.path.exists(POLICY_FOLDER):
+    if not POLICY_FOLDER.exists():
         return chunks
-    for filename in os.listdir(POLICY_FOLDER):
-        if not filename.endswith(".txt"):
-            continue
-        file = open(os.path.join(POLICY_FOLDER, filename), encoding="utf-8")
-        content = file.read()
-        file.close()
-        paragraphs = content.split("\n\n")
-        for paragraph in paragraphs:
+    for path in sorted(POLICY_FOLDER.glob("*.txt")):
+        content = path.read_text(encoding="utf-8")
+        for paragraph in content.split("\\n\\n"):
             paragraph = paragraph.strip()
             if len(paragraph) > 20:
-                chunks.append({"source": filename, "text": paragraph})
+                chunks.append({"source": path.name, "text": paragraph})
     return chunks
 
 
 def search_policies(question, top_k=3):
+    question = (question or "").strip()
     chunks = load_policy_chunks()
-    if len(chunks) == 0 or question.strip() == "":
+    if not chunks or not question:
         return []
 
-    texts = []
-    for chunk in chunks:
-        texts.append(chunk["text"])
-    texts.append(question)  # the question goes last
-
+    texts = [chunk["text"] for chunk in chunks] + [question]
     try:
-        vectorizer = TfidfVectorizer(stop_words="english")
+        vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
         matrix = vectorizer.fit_transform(texts)
     except ValueError:
         return []
 
-    similarities = cosine_similarity(matrix[len(texts) - 1], matrix[: len(texts) - 1])[0]
-
-    scored = []
-    for i in range(len(chunks)):
-        scored.append((float(similarities[i]), i))
-    scored.sort(reverse=True)
-
-    results = []
-    for score, index in scored[:top_k]:
-        if score > 0:
-            results.append({
-                "source": chunks[index]["source"],
-                "text": chunks[index]["text"],
-                "score": round(score, 3),
-            })
-    return results
+    similarities = cosine_similarity(matrix[-1], matrix[:-1])[0]
+    ranked = sorted(
+        [(float(score), index) for index, score in enumerate(similarities)],
+        reverse=True,
+    )
+    return [
+        {
+            "source": chunks[index]["source"],
+            "text": chunks[index]["text"],
+            "score": round(score, 3),
+        }
+        for score, index in ranked[:top_k]
+        if score > 0
+    ]
