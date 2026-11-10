@@ -1,11 +1,15 @@
-// Top bar of the app. It only shows the product name.
 function Navbar() {
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-      <h1 className="text-xl font-bold text-indigo-700">CaseIQ</h1>
-      <p className="text-sm text-gray-500">AI-Powered Decision & Quality Assurance</p>
-    </div>
+    <header className="topbar">
+      <a className="brand" href="/" aria-label="CaseIQ home">
+        <span className="brand-mark">C</span>
+        <span>case<span>iq</span><small>DECISION INTELLIGENCE</small></span>
+      </a>
+      <div className="topbar-right">
+        <span className="topbar-label">QUALITY OPERATIONS</span>
+        <span className="avatar">M</span>
+      </div>
+    </header>
   );
 }
-
 export default Navbar;
