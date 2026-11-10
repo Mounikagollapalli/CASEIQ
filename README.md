@@ -1,116 +1,136 @@
-# CaseIQ — AI-Powered Decision & Quality Assurance
+# CaseIQ — AI-Powered Decision Intelligence & Quality Assurance Platform
 
-CaseIQ is a document-driven case review platform. It combines PDF text extraction, transparent rule-based risk scoring, policy retrieval, optional AI-assisted explanations, and human review in one workflow.
+**Explainable AI. Intelligent Document Analysis. Human-Led Decisions.**
 
-> **Important:** CaseIQ is a decision-support prototype, not an automated legal, financial, employment, or compliance decision-maker. A human reviewer must make the final decision.
+CaseIQ is an AI-powered, document-driven decision intelligence platform designed to streamline case evaluation, strengthen quality assurance, and improve the consistency of review workflows.
 
-## Product workflow
+The platform brings together intelligent document processing, explainable risk assessment, policy-based information retrieval, and AI-assisted insights within a unified case management environment. It transforms unstructured PDF documents into structured, reviewable case information and provides transparent analytical support to human decision-makers.
 
-1. Upload a text-based PDF.
-2. Extract and save its text as a case.
-3. Run explainable risk checks and identify missing information.
-4. Retrieve relevant policy passages from the local policy library.
-5. Optionally request an AI-written explanation when an OpenAI key is configured.
-6. Review, approve, or reject the recommendation.
-7. Monitor case volumes and review outcomes in Analytics.
+Built with React, FastAPI, Python, and Machine Learning technologies, CaseIQ demonstrates the practical integration of modern full-stack engineering with applied AI, information retrieval, and responsible decision-support architecture.
 
-## Features
+## Overview
 
-- Dashboard with case and review KPIs
-- Case search, status filters, and case details
-- PDF upload, extraction, and analysis
-- Rule-based risk score with a clear method label
-- Policy search using TF-IDF retrieval
-- Optional OpenAI explanation (never required for core workflow)
-- Human approval/rejection with reviewer comments
-- Analytics for risk distribution and review outcomes
+CaseIQ addresses a fundamental challenge in document-intensive operations: reviewing large amounts of information while maintaining accuracy, consistency, traceability, and accountability.
 
-## Tech stack
+Rather than treating AI as an independent decision-maker, CaseIQ uses a structured intelligence pipeline that combines deterministic analysis with optional generative AI assistance.
 
-**Frontend:** React, Vite, Tailwind CSS, Axios  
-**Backend:** Python, FastAPI, SQLAlchemy, SQLite  
-**AI/ML:** scikit-learn, TF-IDF retrieval, optional OpenAI API  
-**Documents:** pypdf
+Every assessment is designed to be explainable, policy-informed, and subject to human verification.
 
-## Repository layout
+## Core Capabilities
 
-```text
-CaseIQ/
-├── backendd/backend/     # FastAPI application and AI services
-├── src/                  # Active React application
-├── public/
-├── package.json
-└── README.md
-```
+**Intelligent Document Processing**
 
-The root `src/` directory is the active Vite frontend. `backendd/src/` is a legacy copy and is not used by the root Vite build.
+PDF ingestion and text extraction using PyPDF, transforming document content into structured case records for further analysis.
 
-## Run locally
+**Explainable Risk Assessment**
 
-### 1. Frontend
+A transparent, rule-based risk evaluation engine that identifies missing information, highlights potential review concerns, and generates understandable risk indicators.
 
-From the repository root:
+**Policy Intelligence & Retrieval**
 
-```bash
-npm install
-npm run dev
-```
+TF-IDF-based document retrieval powered by Scikit-learn, enabling relevant policy passages to be identified from the internal policy knowledge base and presented alongside case information.
 
-Open http://localhost:5173.
+**AI-Assisted Case Explanations**
 
-### 2. Backend
+Optional OpenAI integration for generating contextual explanations of analytical findings. The core workflow remains functional without an external AI API key.
 
-In a second terminal:
+**Centralized Case Management**
 
-```powershell
-cd backendd/backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+A unified workspace for searching cases, monitoring statuses, examining extracted information, and managing the complete review lifecycle.
 
-Open http://127.0.0.1:8000/docs for the API documentation.
+**Human-in-the-Loop Review**
 
-### 3. Optional OpenAI setup
+Reviewer-controlled approval and rejection workflows with comments, ensuring that recommendations remain advisory and final decisions remain with authorized human reviewers.
 
-Copy `.env.example` to `.env` inside `backendd/backend/` and add your own key:
+**Analytics & Quality Monitoring**
 
-```env
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4o-mini
-```
+Dashboard insights covering case volumes, risk distributions, review outcomes, and operational performance indicators.
 
-Never commit `.env` or paste API keys into source code. Without a key, document extraction, rule-based risk analysis, policy retrieval, and human review remain available.
+## System Architecture
 
-## API configuration
+CaseIQ follows a modular full-stack architecture that separates the presentation layer, application services, analytical components, and persistence layer.
 
-The frontend uses `VITE_API_URL` when set and otherwise defaults to `http://localhost:8000`.
+- **Frontend:** React and Vite provide a responsive interface for case management, document intelligence, analytical insights, and review operations.
+- **Backend:** FastAPI exposes RESTful endpoints and coordinates document processing, risk evaluation, policy retrieval, and review workflows.
+- **Data Layer:** SQLAlchemy manages application data models and database interactions, with SQLite supporting local development.
+- **Intelligence Layer:** Python and Scikit-learn power rule-based assessment and TF-IDF-based policy retrieval.
+- **Document Processing:** PyPDF extracts text from supported PDF documents.
+- **Generative AI:** OpenAI API integration provides optional natural-language explanations.
 
-For a deployed frontend, configure `VITE_API_URL` to the HTTPS URL of a separately hosted, persistent FastAPI backend. The current SQLite setup is intended for local development; serverless filesystems are ephemeral, so production deployment needs a persistent database.
+## Technology Stack
 
-## Quality checks
+| Layer | Technologies |
+|---|---|
+| Frontend | React, Vite, Tailwind CSS, Axios |
+| Backend | Python, FastAPI |
+| Database | SQLAlchemy, SQLite |
+| Machine Learning | Scikit-learn |
+| Information Retrieval | TF-IDF, Natural Language Processing |
+| Document Intelligence | PyPDF, PDF Text Extraction |
+| Generative AI | OpenAI API (Optional) |
+| Development Tools | Git, GitHub, VS Code |
 
-```bash
-npm run lint
-npm run build
-```
+## Engineering Approach
 
-## Limitations
+The project emphasizes several important software engineering principles:
 
-- Scanned/image-only PDFs require OCR and are not currently supported.
-- The baseline risk score is a transparent completeness heuristic, not a validated predictive model.
-- Policy retrieval is TF-IDF keyword relevance, not embedding-based semantic search.
-- SQLite is for local development/demo use.
-- OpenAI explanations are optional and must be checked by a human.
+- Modular separation of frontend, backend, and analytical services.
+- REST API-based communication between application layers.
+- Explainable and deterministic baseline risk assessment.
+- Retrieval-based policy grounding instead of relying exclusively on generated responses.
+- Optional integration with external AI services.
+- Structured data persistence and case lifecycle management.
+- Human oversight and accountability in decision workflows.
+
+## Responsible AI & Design Principles
+
+CaseIQ is developed as a decision-support prototype rather than an autonomous decision-making system.
+
+Its risk indicators are based on transparent completeness heuristics and are not presented as statistically validated predictions. Policy retrieval provides relevant reference material, not authoritative legal interpretations. AI-generated explanations are advisory and require independent verification.
+
+The platform is designed around explainability, transparency, and human accountability.
+
+## Project Structure
+
+The repository maintains a clear separation between the active frontend application and backend services.
+
+- `src/` — Active React frontend application.
+- `backendd/backend/` — FastAPI backend, application logic, document processing, and AI services.
+- `public/` — Static frontend assets.
+- `package.json` — Frontend dependencies and development scripts.
+
+The legacy `backendd/src/` directory is not part of the active root Vite frontend build.
+
+## Current Scope & Future Direction
+
+The current implementation establishes the core document-to-case workflow, explainable risk analysis, policy retrieval, optional AI explanations, and human review capabilities.
+
+Potential future enhancements include:
+
+- OCR support for scanned and image-based documents.
+- Embedding-based semantic policy retrieval.
+- Advanced risk analytics and configurable assessment rules.
+- Persistent PostgreSQL storage for hosted deployments.
+- Role-based access control and reviewer permissions.
+- Audit trails and enhanced case traceability.
+- Scalable document storage and processing infrastructure.
+
+## Deployment Architecture
+
+The frontend is connected to a GitHub repository and deployed through Vercel.
+
+The backend is designed to run as a separately hosted FastAPI service. A production-oriented deployment requires a persistent database, HTTPS API configuration, and appropriate cross-origin resource sharing settings.
+
+The current SQLite implementation is intended for local development and demonstration.
 
 ## Developer
 
-**Mounika Gollapalli**  
+**Mounika Gollapalli**
+
+Software Developer | AI & Machine Learning Enthusiast
+
 GitHub: https://github.com/Mounikagollapalli
 
-*CaseIQ — Explainable insights. Human-led decisions.*
+---
 
-## Deployment
-
-The Vercel project is connected to this GitHub repository. Preview deployments are intended for frontend review. The FastAPI API must be deployed separately with a persistent PostgreSQL database and matching CORS origins before the hosted workflow can process real documents.
+*CaseIQ — Turning documents into explainable insights, and insights into informed human decisions.*
