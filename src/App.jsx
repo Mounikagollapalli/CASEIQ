@@ -7,58 +7,62 @@ import CaseDetails from "./components/CaseDetails";
 import DocumentUpload from "./components/DocumentUpload";
 import RiskAnalysis from "./components/RiskAnalysis";
 import HumanReview from "./components/HumanReview";
+import PolicyKnowledge from "./components/PolicyKnowledge";
+import Analytics from "./components/Analytics";
 
-// App decides which page to show, based on currentPage.
+const pageTitles = {
+  dashboard: "Overview",
+  cases: "Case management",
+  documents: "Document intelligence",
+  risk: "AI risk analysis",
+  policy: "Policy knowledge base",
+  review: "Human review",
+  analytics: "Analytics & reports",
+};
+
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedCaseId, setSelectedCaseId] = useState(null);
 
-  function handleChangePage(pageId) {
-    setCurrentPage(pageId);
+  function changePage(page) {
+    setCurrentPage(page);
     setSelectedCaseId(null);
   }
 
-  function handleAnalyze(caseId) {
+  function openAnalysis(caseId) {
     setSelectedCaseId(caseId);
     setCurrentPage("risk");
   }
 
-  let pageContent = null;
-
-  if (currentPage === "dashboard") {
-    pageContent = <Dashboard />;
-  } else if (currentPage === "cases") {
-    if (selectedCaseId === null) {
-      pageContent = <CaseList onSelectCase={setSelectedCaseId} />;
-    } else {
-      pageContent = (
-        <CaseDetails
-          caseId={selectedCaseId}
-          onBack={function () {
-            setSelectedCaseId(null);
-          }}
-          onAnalyze={handleAnalyze}
-        />
-      );
-    }
-  } else if (currentPage === "documents") {
-    pageContent = <DocumentUpload />;
-  } else if (currentPage === "risk") {
-    pageContent = <RiskAnalysis caseId={selectedCaseId} />;
-  } else if (currentPage === "review") {
-    pageContent = <HumanReview />;
-  } else if (currentPage === "policy") {
-    pageContent = <p className="text-gray-500">Policy Knowledge Base - built in Stage 5 (RAG).</p>;
-  } else if (currentPage === "analytics") {
-    pageContent = <p className="text-gray-500">Analytics & Reports - built in Stage 7.</p>;
-  }
+  let content;
+  if (currentPage === "dashboard") content = <Dashboard onNavigate={changePage} />;
+  else if (currentPage === "cases") {
+    content = selectedCaseId === null
+      ? <CaseList onSelectCase={setSelectedCaseId} />
+      : <CaseDetails caseId={selectedCaseId} onBack={() => setSelectedCaseId(null)} onAnalyze={openAnalysis} />;
+  } else if (currentPage === "documents") content = <DocumentUpload onAnalyze={openAnalysis} />;
+  else if (currentPage === "risk") content = <RiskAnalysis caseId={selectedCaseId} />;
+  else if (currentPage === "policy") content = <PolicyKnowledge />;
+  else if (currentPage === "review") content = <HumanReview />;
+  else content = <Analytics />;
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="app-shell min-h-screen">
       <Navbar />
-      <div className="flex">
-        <Sidebar currentPage={currentPage} onChangePage={handleChangePage} />
-        <div className="flex-1 p-6">{pageContent}</div>
+      <div className="workspace">
+        <Sidebar currentPage={currentPage} onChangePage={changePage} />
+        <main className="main-content">
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">CASEIQ WORKSPACE</p>
+              <h1>{pageTitles[currentPage]}</h1>
+              <p className="page-subtitle">Review documents, understand risk, and keep decisions human-led.</p>
+            </div>
+            <span className="workspace-status"><span /> Local workspace</span>
+          </div>
+          {content}
+          <footer className="app-footer">CaseIQ · AI-assisted quality assurance · Human review required</footer>
+        </main>
       </div>
     </div>
   );
