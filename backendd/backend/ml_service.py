@@ -1,5 +1,4 @@
 import re
-from pathlib import Path
 
 from database import Case, Review
 
@@ -9,7 +8,7 @@ MIN_REVIEWS_TO_TRAIN = 10
 DOCUMENT_RULES = {
     "resume": {
         "fields": {
-            "Name": lambda text: len(re.findall(r"\b[A-Z][A-Z'-]{1,}\b", text[:600])) >= 2,
+            "Name": lambda text: has_name(text),
             "Email address": lambda text: bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)),
             "Phone number": lambda text: len(re.sub(r"\D", "", text)) >= 10,
             "Education": lambda text: bool(re.search(r"education|b\.?tech|bachelor|university|college|degree|master", text, re.I)),
@@ -40,9 +39,25 @@ DOCUMENT_RULES = {
     },
 }
 
+def has_name(text):
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    ignored = {"professional", "summary", "technical", "skills", "curriculum", "vitae", "resume", "profile", "contact"}
+    for line in lines[:8]:
+        words = re.findall(r"[A-Za-z][A-Za-z'-]+", line)
+        if 2 <= len(words) <= 4 and all(word[0].isupper() for word in words):
+            if not any(word.lower() in ignored for word in words):
+                return True
+    uppercase_tokens = re.findall(r"\b[A-Z][A-Z'-]{1,}\b", (text or "")[:600])
+    return len(uppercase_tokens) >= 2
+
 def classify_document(text):
     content = text or ""
-    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\bresume\b|\bprojects\b", content, re.I):
+    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\bresume\b", content, re.I):
+        return "resume"
+    resume_signals = sum(bool(re.search(pattern, content, re.I)) for pattern in (
+        r"education", r"experience", r"technical skills", r"projects", r"linkedin", r"career objective"
+    ))
+    if resume_signals >= 2:
         return "resume"
     if re.search(r"invoice|amount due|bill to|tax invoice", content, re.I):
         return "invoice"
