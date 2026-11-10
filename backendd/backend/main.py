@@ -1,11 +1,10 @@
-# CaseIQ backend. Run with:  uvicorn main:app --reload --port 8000
-
 import json
+import os
 from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from pypdf import PdfReader
+from pypdf import PdfReader, errors as pdf_errors
 
 from database import Base, engine, SessionLocal, Case, Review
 import ml_service
@@ -14,12 +13,20 @@ import ai_service
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CaseIQ API")
+app = FastAPI(
+    title="CaseIQ API",
+    description="Document intelligence and human-led quality assurance API.",
+    version="1.0.0",
+)
 
-# Allow the React app (port 5173) to call this API
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,21 +63,25 @@ def case_to_dict(case):
 
 
 def calculate_qa_accuracy(db):
-    """Share of reviewed cases where the AI risk agreed with the human.
-    AI flagged a problem = risk score 40 or more. Human rejected = problem."""
+    """Agreement between a completed human review and the risk flag."""
     reviews = db.query(Review).all()
-    if len(reviews) == 0:
-        return None
+    valid = 0
     agree = 0
     for review in reviews:
         case = db.query(Case).filter(Case.id == review.case_id).first()
         if case is None or case.risk_score is None:
             continue
+        valid += 1
         ai_flagged = case.risk_score >= 40
         human_rejected = review.decision == "rejected"
         if ai_flagged == human_rejected:
             agree += 1
-    return round(agree / len(reviews) * 100, 1)
+    return round(agree / valid * 100, 1) if valid else None
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "service": "caseiq-api", "version": "1.0.0"}
 
 
 @app.get("/dashboard/stats")
@@ -85,10 +96,10 @@ def dashboard_stats(db: Session = Depends(get_db)):
 
 @app.get("/cases")
 def list_cases(db: Session = Depends(get_db)):
-    result = []
-    for case in db.query(Case).order_by(Case.id.desc()).all():
-        result.append(case_to_dict(case))
-    return result
+    return [
+        case_to_dict(case)
+        for case in db.query(Case).order_by(Case.id.desc()).all()
+    ]
 
 
 @app.get("/cases/{case_id}")
@@ -101,31 +112,45 @@ def get_case(case_id: int, db: Session = Depends(get_db)):
 
 @app.post("/documents/upload")
 def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.lower().endswith(".pdf"):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    reader = PdfReader(file.file)
-    all_text = ""
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            all_text += page_text + "\n"
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="PDF must be 10 MB or smaller")
 
-    if all_text.strip() == "":
-        raise HTTPException(status_code=400, detail="No text found. Scanned PDFs need OCR.")
+    try:
+        reader = PdfReader(file.file)
+        if reader.is_encrypted:
+            raise HTTPException(status_code=400, detail="This PDF is password-protected. Upload an unlocked PDF.")
+        all_text = ""
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                all_text += page_text + "\n"
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="The PDF could not be read. Please upload a valid PDF file.")
+
+    if not all_text.strip():
+        raise HTTPException(status_code=400, detail="No selectable text was found. Scanned PDFs need OCR before upload.")
 
     case = Case(
-        title=file.filename,
+        title=filename[:255],
         status="open",
         document_text=all_text,
-        summary=all_text[:300],
+        summary=all_text[:500],
     )
     db.add(case)
     db.commit()
     db.refresh(case)
 
     return {
-        "filename": file.filename,
+        "filename": filename,
         "page_count": len(reader.pages),
         "extracted_text": all_text,
         "case_id": case.id,
@@ -138,31 +163,31 @@ def analyze_case(case_id: int, db: Session = Depends(get_db)):
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    score, level, method = ml_service.predict_risk(case.document_text)
-    missing = ml_service.find_missing_fields(case.document_text)
-    evidence = rag_service.search_policies(case.document_text[:1000])
+    document_text = case.document_text or ""
+    score, level, method = ml_service.predict_risk(document_text)
+    missing = ml_service.find_missing_fields(document_text)
+    evidence = rag_service.search_policies(document_text[:1500])
 
-    # Rule-based explanation (always available)
-    reasons = []
-    for field in missing:
-        reasons.append("The word '" + field + "' was not found in the document.")
-    if len(reasons) == 0:
-        reasons.append("All required fields were found.")
+    reasons = [
+        "The word '" + field + "' was not found in the document."
+        for field in missing
+    ]
+    if not reasons:
+        reasons.append("All configured required fields were found.")
     recommended_action = "Send to human review."
-
     ai_used = False
-    ai_message = "OpenAI is not configured. Add OPENAI_API_KEY to backend/.env for AI analysis."
+    ai_message = "Optional AI explanation is not configured. Rule-based checks remain available."
 
     if ai_service.is_ai_configured():
         try:
-            ai_result = ai_service.get_ai_analysis(case.document_text, evidence, missing)
+            ai_result = ai_service.get_ai_analysis(document_text, evidence, missing)
             reasons = ai_result.get("reasons", reasons)
             missing = ai_result.get("missing_information", missing)
             recommended_action = ai_result.get("recommended_action", recommended_action)
             ai_used = True
-            ai_message = "Explanation written by OpenAI using the policy evidence shown."
-        except Exception as error:
-            ai_message = "OpenAI call failed: " + str(error)
+            ai_message = "AI-assisted explanation generated from the supplied policy excerpts."
+        except Exception:
+            ai_message = "The optional AI explanation was unavailable. Rule-based findings are shown."
 
     analysis = {
         "risk_score": score,
@@ -188,49 +213,54 @@ def analyze_case(case_id: int, db: Session = Depends(get_db)):
 @app.get("/reviews/pending")
 def pending_reviews(db: Session = Depends(get_db)):
     result = []
-    for case in db.query(Case).filter(Case.status == "in_review").all():
-        analysis = json.loads(case.analysis_json)
+    for case in db.query(Case).filter(Case.status == "in_review").order_by(Case.id.desc()).all():
+        analysis = json.loads(case.analysis_json or "{}")
         result.append({
             "case_id": case.id,
             "title": case.title,
-            "ai_recommendation": case.ai_recommendation,
+            "ai_recommendation": case.ai_recommendation or "Human review required.",
             "risk_score": case.risk_score,
-            "explanation": " ".join(analysis["reasons"]),
+            "explanation": " ".join(analysis.get("reasons", [])),
         })
     return result
 
 
 @app.post("/reviews")
 def save_review(data: ReviewInput, db: Session = Depends(get_db)):
-    if data.decision != "approved" and data.decision != "rejected":
+    if data.decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Decision must be approved or rejected")
     case = db.query(Case).filter(Case.id == data.case_id).first()
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
+    if case.status != "in_review":
+        raise HTTPException(status_code=409, detail="This case is not waiting for review")
 
-    db.add(Review(case_id=data.case_id, decision=data.decision, comment=data.comment))
+    db.add(Review(case_id=data.case_id, decision=data.decision, comment=data.comment.strip()))
     case.status = "closed"
     db.commit()
-    return {"message": "Review saved"}
+    return {"message": "Review saved", "case_id": case.id, "decision": data.decision}
 
 
 @app.post("/policies/search")
 def policy_search(data: PolicyQuestion):
-    return rag_service.search_policies(data.question)
+    if not data.question.strip():
+        raise HTTPException(status_code=400, detail="Enter a policy question")
+    return rag_service.search_policies(data.question.strip())
 
 
 @app.get("/analytics")
 def analytics(db: Session = Depends(get_db)):
     risk_counts = {"high": 0, "medium": 0, "low": 0, "not_analyzed": 0}
     for case in db.query(Case).all():
-        if case.risk_level is None:
+        if case.risk_level not in ("high", "medium", "low"):
             risk_counts["not_analyzed"] += 1
         else:
             risk_counts[case.risk_level] += 1
 
     review_counts = {"approved": 0, "rejected": 0}
     for review in db.query(Review).all():
-        review_counts[review.decision] += 1
+        if review.decision in review_counts:
+            review_counts[review.decision] += 1
 
     return {
         "risk_counts": risk_counts,
