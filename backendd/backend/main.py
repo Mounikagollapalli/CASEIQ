@@ -84,6 +84,8 @@ def dashboard_stats(db: Session = Depends(get_db)):
         "high_risk_cases": db.query(Case).filter(Case.risk_level == "high").count(),
         "qa_accuracy": calculate_qa_accuracy(db),
         "pending_reviews": db.query(Case).filter(Case.status == "in_review").count(),
+        "approved_reviews": db.query(Review).filter(Review.decision == "approved").count(),
+        "rejected_reviews": db.query(Review).filter(Review.decision == "rejected").count(),
     }
 
 @app.get("/cases")
@@ -137,7 +139,7 @@ def analyze_case(case_id: int, db: Session = Depends(get_db)):
     document_type = ml_service.classify_document(document_text)
     score, level, method = ml_service.predict_risk(document_text)
     missing = ml_service.find_missing_fields(document_text, document_type)
-    evidence = rag_service.search_policies(document_text[:1500])
+    evidence = rag_service.search_policies(document_text[:1500], document_type=document_type)
     if document_type == "general":
         reasons = ["The document type could not be confidently identified. Select the correct document category and review it manually."]
         recommended_action = "Manual classification and human review required."
@@ -213,6 +215,23 @@ def save_review(data: ReviewInput, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Review saved", "case_id": case.id, "decision": data.decision}
 
+@app.get("/reviews/history")
+def review_history(db: Session = Depends(get_db)):
+    result = []
+    reviews = db.query(Review).order_by(Review.created_at.desc(), Review.id.desc()).limit(100).all()
+    for review in reviews:
+        case = db.query(Case).filter(Case.id == review.case_id).first()
+        result.append({
+            "review_id": review.id,
+            "case_id": review.case_id,
+            "case_title": case.title if case else "Deleted case",
+            "decision": review.decision,
+            "comment": review.comment,
+            "created_at": review.created_at.isoformat() if review.created_at else None,
+        })
+    return result
+
+
 @app.post("/policies/search")
 def policy_search(data: PolicyQuestion):
     if not data.question.strip():
@@ -227,11 +246,28 @@ def analytics(db: Session = Depends(get_db)):
             risk_counts["not_analyzed"] += 1
         else:
             risk_counts[case.risk_level] += 1
-    review_counts = {"approved": 0, "rejected": 0}
-    for review in db.query(Review).all():
-        if review.decision in review_counts:
-            review_counts[review.decision] += 1
-    return {"risk_counts": risk_counts, "review_counts": review_counts, "qa_accuracy": calculate_qa_accuracy(db)}
+
+    review_counts = {
+        "approved": db.query(Review).filter(Review.decision == "approved").count(),
+        "rejected": db.query(Review).filter(Review.decision == "rejected").count(),
+    }
+    recent_reviews = []
+    for review in db.query(Review).order_by(Review.created_at.desc(), Review.id.desc()).limit(20).all():
+        case = db.query(Case).filter(Case.id == review.case_id).first()
+        recent_reviews.append({
+            "review_id": review.id,
+            "case_id": review.case_id,
+            "case_title": case.title if case else "Deleted case",
+            "decision": review.decision,
+            "comment": review.comment,
+            "created_at": review.created_at.isoformat() if review.created_at else None,
+        })
+    return {
+        "risk_counts": risk_counts,
+        "review_counts": review_counts,
+        "qa_accuracy": calculate_qa_accuracy(db),
+        "recent_reviews": recent_reviews,
+    }
 
 @app.post("/ml/train")
 def train(db: Session = Depends(get_db)):
