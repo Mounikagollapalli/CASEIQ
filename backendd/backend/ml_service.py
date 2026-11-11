@@ -70,9 +70,12 @@ def has_projects_section(text):
     )
     return any(re.search(pattern, content) for pattern in patterns)
 
-def classify_document(text):
-    """Classify common business documents using explicit phrases and multiple signals."""
+def classify_document(text, filename=None):
+    """Classify common business documents using content and an optional filename."""
     content = text or ""
+    file_label = filename or ""
+    if re.search(r"cover[ _-]?letter", file_label, re.I):
+        return "cover_letter"
     cover_letter_signals = (
         r"cover letter",
         r"dear\s+(hiring manager|recruiter|talent acquisition)",
@@ -111,7 +114,7 @@ def build_features(text):
         len(content.split()),
         len(re.findall(r"\d+", content)),
         len(missing),
-        {"general": 0, "resume": 1, "invoice": 2, "agreement": 3}.get(kind, 0),
+        {"general": 0, "resume": 1, "invoice": 2, "agreement": 3, "cover_letter": 4}.get(kind, 0),
     ]
 
 def score_to_level(score):
@@ -121,9 +124,9 @@ def score_to_level(score):
         return "medium"
     return "low"
 
-def predict_risk(text):
+def predict_risk(text, document_type=None):
     """Return a document-specific completeness gap indicator, not a fraud score."""
-    kind = classify_document(text)
+    kind = document_type or classify_document(text)
     rules = DOCUMENT_RULES.get(kind)
     if not rules:
         return None, "unclassified", "document_type_unclassified"
