@@ -23,6 +23,8 @@ function Dashboard({ onNavigate }) {
     { label: "High-gap cases", value: stats?.high_risk_cases ?? "—", icon: "!", foot: "Need careful verification" },
     { label: "QA agreement", value: stats?.qa_accuracy == null ? "—" : stats.qa_accuracy + "%", icon: "✓", foot: "Reviewer alignment with completeness flag" },
     { label: "Pending reviews", value: stats?.pending_reviews ?? "—", icon: "◷", foot: "Awaiting human decision" },
+    { label: "Approved decisions", value: stats?.approved_reviews ?? 0, icon: "✓", foot: "Human-approved cases" },
+    { label: "Rejected decisions", value: stats?.rejected_reviews ?? 0, icon: "×", foot: "Human-rejected cases" },
   ];
 
   return <div>
