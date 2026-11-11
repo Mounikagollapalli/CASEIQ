@@ -5,11 +5,21 @@ from sklearn.metrics.pairwise import cosine_similarity
 POLICY_FOLDER = Path(__file__).resolve().parent / "policies"
 
 
-def load_policy_chunks():
+def load_policy_chunks(document_type=None):
     chunks = []
     if not POLICY_FOLDER.exists():
         return chunks
+
+    allowed_names = {
+        "resume": {"resume_policy.txt", "general_policy.txt"},
+        "cover_letter": {"cover_letter_policy.txt", "general_policy.txt"},
+        "invoice": {"invoice_policy.txt", "general_policy.txt"},
+        "agreement": {"agreement_policy.txt", "general_policy.txt"},
+    }
+    allowed = allowed_names.get(document_type)
     for path in sorted(POLICY_FOLDER.glob("*.txt")):
+        if allowed is not None and path.name not in allowed:
+            continue
         content = path.read_text(encoding="utf-8")
         for paragraph in content.split("\n\n"):
             paragraph = paragraph.strip()
@@ -18,9 +28,9 @@ def load_policy_chunks():
     return chunks
 
 
-def search_policies(question, top_k=3):
+def search_policies(question, top_k=3, document_type=None, min_score=0.05):
     question = (question or "").strip()
-    chunks = load_policy_chunks()
+    chunks = load_policy_chunks(document_type)
     if not chunks or not question:
         return []
 
@@ -43,5 +53,5 @@ def search_policies(question, top_k=3):
             "score": round(score, 3),
         }
         for score, index in ranked[:top_k]
-        if score > 0
+        if score >= min_score
     ]
