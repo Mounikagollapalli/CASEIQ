@@ -65,6 +65,7 @@ def has_projects_section(text):
     content = text or ""
     patterns = (
         r"(?im)^\s*(?:(?:academic|personal|key|selected|professional|relevant)\s+)?projects?\s*[:|]?\s*$",
+        r"(?im)^\s*(?:(?:academic|personal|key|selected|professional|relevant)\s+)?projects?\s*[:|]\s*\S.*$",
         r"(?im)^\s*project\s+experience\s*[:|]?\s*$",
         r"(?im)^\s*academic\s+project\s+work\s*[:|]?\s*$",
     )
