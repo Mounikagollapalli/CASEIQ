@@ -136,8 +136,8 @@ def analyze_case(case_id: int, db: Session = Depends(get_db)):
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     document_text = case.document_text or ""
-    document_type = ml_service.classify_document(document_text)
-    score, level, method = ml_service.predict_risk(document_text)
+    document_type = ml_service.classify_document(document_text, case.title)
+    score, level, method = ml_service.predict_risk(document_text, document_type)
     missing = ml_service.find_missing_fields(document_text, document_type)
     evidence = rag_service.search_policies(document_text[:1500], document_type=document_type)
     if document_type == "general":
