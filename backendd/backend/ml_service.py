@@ -8,8 +8,8 @@ MIN_REVIEWS_TO_TRAIN = 10
 DOCUMENT_RULES = {
     "cover_letter": {
         "fields": {
-            "Applicant contact": lambda text: bool(re.search(r"[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}|\\b\\+?\\d[\\d ()-]{8,}\\d\\b", text)),
-            "Recipient or salutation": lambda text: bool(re.search(r"dear\\s+(hiring manager|recruiter|talent acquisition|\\w+)|to the hiring team", text, re.I)),
+            "Applicant contact": lambda text: bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\+?\d[\d ()-]{8,}\d\b", text)),
+            "Recipient or salutation": lambda text: bool(re.search(r"dear\s+(hiring manager|recruiter|talent acquisition|\w+)|to the hiring team", text, re.I)),
             "Application purpose": lambda text: bool(re.search(r"apply(ing)? for|application for|interested in the position|role of", text, re.I)),
             "Relevant experience or skills": lambda text: bool(re.search(r"experience|skills|background|qualified|worked with", text, re.I)),
             "Closing or signature": lambda text: bool(re.search(r"sincerely|regards|thank you|best regards", text, re.I)),
@@ -64,19 +64,18 @@ def has_projects_section(text):
     """Recognize common résumé project-section headings."""
     content = text or ""
     patterns = (
-        r"(?im)^\\s*(?:(?:academic|personal|key|selected|professional|relevant)\\s+)?projects?\\s*[:|]?\\s*$",
-        r"(?im)^\\s*project\\s+experience\\s*[:|]?\\s*$",
-        r"(?im)^\\s*academic\\s+project\\s+work\\s*[:|]?\\s*$",
+        r"(?im)^\s*(?:(?:academic|personal|key|selected|professional|relevant)\s+)?projects?\s*[:|]?\s*$",
+        r"(?im)^\s*project\s+experience\s*[:|]?\s*$",
+        r"(?im)^\s*academic\s+project\s+work\s*[:|]?\s*$",
     )
     return any(re.search(pattern, content) for pattern in patterns)
-
 
 def classify_document(text):
     """Classify common business documents using explicit phrases and multiple signals."""
     content = text or ""
     cover_letter_signals = (
         r"cover letter",
-        r"dear\\s+(hiring manager|recruiter|talent acquisition)",
+        r"dear\s+(hiring manager|recruiter|talent acquisition)",
         r"i am writing to apply",
         r"i would like to apply",
         r"application for the position",
@@ -84,7 +83,7 @@ def classify_document(text):
     if any(re.search(pattern, content, re.I) for pattern in cover_letter_signals):
         return "cover_letter"
 
-    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\\bresume\\b|\\bcv\\b", content, re.I):
+    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\bresume\b|\bcv\b", content, re.I):
         return "resume"
     resume_signals = sum(bool(re.search(pattern, content, re.I)) for pattern in (
         r"education", r"experience", r"technical skills", r"projects", r"linkedin", r"career objective"
