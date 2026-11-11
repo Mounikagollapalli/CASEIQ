@@ -43,6 +43,10 @@ export async function getAnalytics() {
   const { data } = await api.get("/analytics");
   return data;
 }
+export async function getReviewHistory() {
+  const { data } = await api.get("/reviews/history");
+  return data;
+}
 export function getApiError(error, fallback = "Something went wrong. Please try again.") {
   return error.response?.data?.detail || error.message || fallback;
 }
