@@ -1,0 +1,3 @@
+RÉSUMÉ DOCUMENT REVIEW POLICY
+
+A résumé should be reviewed for applicant name, contact information, education, relevant skills, work experience, and project experience where applicable. Project sections may be titled Projects, Academic Projects, Personal Projects, Selected Projects, or Project Experience. A missing section should be recorded as a completeness observation and verified against the extracted document text. Reviewers must confirm the source document before approving or rejecting a case.
