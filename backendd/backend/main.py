@@ -203,6 +203,8 @@ def pending_reviews(db: Session = Depends(get_db)):
 
 @app.post("/reviews")
 def save_review(data: ReviewInput, db: Session = Depends(get_db)):
+    if len(data.comment.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Reviewer comment must contain at least 3 non-space characters")
     if data.decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Decision must be approved or rejected")
     case = db.query(Case).filter(Case.id == data.case_id).first()
