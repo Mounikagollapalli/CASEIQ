@@ -1,57 +1,52 @@
-// This file keeps ALL backend calls in one place.
-// Every function uses Axios and returns the response data.
-// The FastAPI backend (built in a later stage) must provide these URLs.
-
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:8000" : "/api"),
+  timeout: 30000,
 });
 
-// Dashboard numbers: { total_cases, high_risk_cases, qa_accuracy, pending_reviews }
 export async function getDashboardStats() {
-  const response = await api.get("/dashboard/stats");
-  return response.data;
+  const { data } = await api.get("/dashboard/stats");
+  return data;
 }
-
-// List of all cases
 export async function getCases() {
-  const response = await api.get("/cases");
-  return response.data;
+  const { data } = await api.get("/cases");
+  return data;
 }
-
-// One case by id
 export async function getCaseById(caseId) {
-  const response = await api.get("/cases/" + caseId);
-  return response.data;
+  const { data } = await api.get("/cases/" + caseId);
+  return data;
 }
-
-// Upload a PDF file. FormData is the standard way to send files.
 export async function uploadDocument(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  const response = await api.post("/documents/upload", formData);
-  return response.data;
+  const body = new FormData();
+  body.append("file", file);
+  const { data } = await api.post("/documents/upload", body);
+  return data;
 }
-
-// Ask the backend (ML model + AI) to analyze one case
 export async function analyzeCase(caseId) {
-  const response = await api.post("/cases/" + caseId + "/analyze");
-  return response.data;
+  const { data } = await api.post("/cases/" + caseId + "/analyze");
+  return data;
 }
-
-// Cases waiting for a human reviewer
 export async function getPendingReviews() {
-  const response = await api.get("/reviews/pending");
-  return response.data;
+  const { data } = await api.get("/reviews/pending");
+  return data;
 }
-
-// Save the reviewer's decision: "approved" or "rejected"
 export async function submitReview(caseId, decision, comment) {
-  const response = await api.post("/reviews", {
-    case_id: caseId,
-    decision: decision,
-    comment: comment,
-  });
-  return response.data;
+  const { data } = await api.post("/reviews", { case_id: caseId, decision, comment });
+  return data;
+}
+export async function searchPolicies(question) {
+  const { data } = await api.post("/policies/search", { question });
+  return data;
+}
+export async function getAnalytics() {
+  const { data } = await api.get("/analytics");
+  return data;
+}
+export async function getReviewHistory() {
+  const { data } = await api.get("/reviews/history");
+  return data;
+}
+export function getApiError(error, fallback = "Something went wrong. Please try again.") {
+  return error.response?.data?.detail || error.message || fallback;
 }

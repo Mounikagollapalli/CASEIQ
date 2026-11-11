@@ -1,134 +1,79 @@
+import { useRef, useState } from "react";
+import { uploadDocument, analyzeCase, getApiError } from "../services/api";
 
-import { useState } from "react";
-import { uploadDocument, analyzeCase } from "../services/api";
-
-function DocumentUpload() {
-  const [selectedFile, setSelectedFile] = useState(null);
+function DocumentUpload({ onAnalyze }) {
+  const inputRef = useRef(null);
+  const [file, setFile] = useState(null);
   const [result, setResult] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  function handleFileChange(event) {
-    const file = event.target.files[0];
-
-    setSelectedFile(file || null);
-    setResult(null);
-    setAnalysis(null);
-    setErrorMessage("");
-
-    if (file && !file.name.toLowerCase().endsWith(".pdf")) {
-      setSelectedFile(null);
-      setErrorMessage("Please select a PDF file.");
-      event.target.value = "";
+  function chooseFile(nextFile) {
+    setError(""); setNotice(""); setResult(null); setAnalysis(null);
+    if (!nextFile) { setFile(null); return; }
+    if (nextFile.type !== "application/pdf" && !nextFile.name.toLowerCase().endsWith(".pdf")) {
+      setFile(null); setError("Please choose a PDF file."); return;
     }
+    if (nextFile.size > 10 * 1024 * 1024) {
+      setFile(null); setError("The PDF is larger than 10 MB. Please choose a smaller file."); return;
+    }
+    setFile(nextFile);
   }
 
   async function handleUpload() {
-    if (!selectedFile) {
-      setErrorMessage("Please choose a PDF file first.");
-      return;
-    }
-
-    setIsUploading(true);
-    setErrorMessage("");
-
+    if (!file) { setError("Choose a PDF file before uploading."); return; }
+    setBusy(true); setError(""); setNotice("");
     try {
-      const data = await uploadDocument(selectedFile);
-      setResult(data);
-    } catch (error) {
-      setErrorMessage(
-        error.response?.data?.detail || "Upload failed. Check whether the backend is running."
-      );
-    } finally {
-      setIsUploading(false);
-    }
+      const data = await uploadDocument(file);
+      setResult(data); setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      setNotice("Document text extracted and case #" + data.case_id + " created successfully.");
+    } catch (err) { setError(getApiError(err, "Upload failed. Please try again.")); }
+    finally { setBusy(false); }
   }
 
   async function handleAnalyze() {
-    setIsAnalyzing(true);
-    setErrorMessage("");
-
+    if (!result?.case_id) return;
+    setBusy(true); setError("");
     try {
       const data = await analyzeCase(result.case_id);
       setAnalysis(data);
-    } catch (error) {
-      setErrorMessage(
-        error.response?.data?.detail || "Risk analysis failed. Please try again."
-      );
-    } finally {
-      setIsAnalyzing(false);
-    }
+      setNotice("Analysis completed. Verify the findings before making a human decision.");
+    } catch (err) { setError(getApiError(err, "Risk analysis failed.")); }
+    finally { setBusy(false); }
   }
 
-  return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Document Intelligence</h2>
-
-      <div className="bg-white p-6 rounded-lg shadow mb-6">
-        <h3 className="font-semibold mb-3">Upload & Extract</h3>
-
-        <input
-          type="file"
-          accept=".pdf,application/pdf"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-
-            console.log("Selected file:", file);
-
-            setSelectedFile(file || null);
-            setResult(null);
-            setAnalysis(null);
-            setErrorMessage("");
-          }}
-        />
-
-        <button
-          onClick={handleUpload}
-          disabled={isUploading}
-          className="ml-4 bg-indigo-600 text-white px-4 py-2 rounded"
-        >
-          {isUploading ? "Uploading..." : "Upload & Extract"}
-        </button>
-
-        {errorMessage !== "" && (
-          <p className="text-red-600 mt-3">{errorMessage}</p>
-        )}
+  return <section>
+    <div className="panel">
+      <div className="section-row"><div><h2 className="panel-title">Upload a case document</h2><p className="panel-subtitle">PDF only · Maximum 10 MB · Text-based PDFs</p></div><span className="badge badge-neutral">Document intake</span></div>
+      <div className="upload-zone">
+        <div className="upload-symbol">⇧</div><p className="panel-title">Select a PDF to begin</p>
+        <p className="panel-subtitle">Choose a document from your device. Scanned PDFs currently require OCR and are not supported.</p>
+        <input ref={inputRef} className="hidden" type="file" accept="application/pdf,.pdf" onChange={event => chooseFile(event.target.files?.[0])} />
+        <button className="btn btn-secondary mt-4" type="button" onClick={() => inputRef.current?.click()}>Browse files</button>
+        {file && <p className="file-name">Selected: <strong>{file.name}</strong> · {(file.size / 1024 / 1024).toFixed(2)} MB</p>}
       </div>
-
-      {result !== null && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <p className="mb-2"><strong>File:</strong> {result.filename}</p>
-          <p className="mb-2"><strong>Pages:</strong> {result.page_count}</p>
-          <p className="mb-2"><strong>Case ID:</strong> {result.case_id}</p>
-
-          <h3 className="font-bold mb-2">Extracted Text</h3>
-
-          <pre className="bg-gray-50 p-3 rounded text-sm whitespace-pre-wrap">
-            {result.extracted_text}
-          </pre>
-
-          <button
-            className="mt-4 bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
-            onClick={handleAnalyze}
-            disabled={isAnalyzing}
-          >
-            {isAnalyzing ? "Analyzing..." : "Run AI Risk Analysis"}
-          </button>
-        </div>
-      )}
-
-      {analysis !== null && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-xl font-bold mb-4">Risk Analysis Results</h3>
-          <pre className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap">
-            {JSON.stringify(analysis, null, 2)}
-          </pre>
-        </div>
-      )}
+      {error && <div className="notice notice-error" role="alert">{error}</div>}
+      {notice && <div className="notice notice-success" role="status">{notice}</div>}
+      <div className="section-row mt-4"><span className="panel-subtitle">Files are sent securely to the connected CaseIQ API for extraction.</span><button className="btn btn-primary" onClick={handleUpload} disabled={!file || busy}>{busy ? "Uploading…" : "Upload & extract"}</button></div>
     </div>
-  );
+    {result && <div className="panel">
+      <div className="section-row"><div><h2 className="panel-title">Extraction result</h2><p className="panel-subtitle">{result.filename} · {result.page_count} page(s) · Case #{result.case_id}</p></div><span className="badge badge-low">Extracted</span></div>
+      <pre className="extracted-text">{result.extracted_text}</pre>
+      <div className="section-row mt-4"><span className="panel-subtitle">Next: identify the document type and run relevant checks.</span><button className="btn btn-primary" onClick={handleAnalyze} disabled={busy}>{busy ? "Analyzing…" : "Run document analysis"}</button></div>
+    </div>}
+    {analysis && <div className="panel">
+      <h2 className="panel-title mb-3">Analysis summary</h2>
+      <div className="analysis-context"><p className="eyebrow">DETECTED DOCUMENT TYPE</p><strong>{analysis.document_type_label || "Unclassified document"}</strong></div>
+      <div className="metric-grid">
+        <div className="metric-card"><p className="metric-label">Completeness gaps</p><p className="metric-value">{analysis.risk_score == null ? "—" : analysis.risk_score + "%"}</p></div>
+        <div className="metric-card"><p className="metric-label">Assessment level</p><p className="metric-value capitalize">{analysis.risk_level}</p></div>
+      </div>
+      <p className="panel-subtitle">{analysis.score_note}</p>
+      <button className="btn btn-secondary mt-4" onClick={() => onAnalyze?.(result.case_id)}>Open full analysis</button>
+    </div>}
+  </section>;
 }
-
 export default DocumentUpload;

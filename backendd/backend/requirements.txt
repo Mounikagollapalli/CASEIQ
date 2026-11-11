@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
 python-multipart
 pypdf
@@ -7,3 +7,4 @@ scikit-learn
 joblib
 openai
 python-dotenv
+psycopg[binary]

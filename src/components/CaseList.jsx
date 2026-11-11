@@ -1,122 +1,34 @@
-import { useState, useEffect } from "react";
-import { getCases } from "../services/api";
-import { getRiskColor } from "../services/helpers";
+import { useEffect, useMemo, useState } from "react";
+import { getCases, getApiError } from "../services/api";
 
-// Table of cases with a search box and a status filter.
-function CaseList(props) {
+function CaseList({ onSelectCase }) {
   const [cases, setCases] = useState([]);
-  const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(function () {
-    async function loadCases() {
-      try {
-        const data = await getCases();
-        setCases(data);
-      } catch (error) {
-        setErrorMessage("Could not load cases. Is the backend running on port 8000?");
-      }
-    }
-    loadCases();
+  useEffect(() => {
+    getCases().then(setCases).catch(err => setError(getApiError(err, "Unable to load cases."))).finally(() => setLoading(false));
   }, []);
 
-  // Keep only the cases that match the search text and the status filter
-  const visibleCases = [];
-  for (let i = 0; i < cases.length; i++) {
-    const oneCase = cases[i];
-    const searchLower = searchText.toLowerCase();
-    const titleLower = oneCase.title.toLowerCase();
+  const filtered = useMemo(() => cases.filter(c =>
+    (status === "all" || c.status === status) &&
+    (c.title || "").toLowerCase().includes(query.toLowerCase())
+  ), [cases, query, status]);
 
-    let matchesSearch = true;
-    if (searchText !== "" && titleLower.indexOf(searchLower) === -1) {
-      matchesSearch = false;
-    }
-
-    let matchesStatus = true;
-    if (statusFilter !== "all" && oneCase.status !== statusFilter) {
-      matchesStatus = false;
-    }
-
-    if (matchesSearch && matchesStatus) {
-      visibleCases.push(oneCase);
-    }
-  }
-
-  // Build the table rows
-  const rows = [];
-  for (let i = 0; i < visibleCases.length; i++) {
-    const c = visibleCases[i];
-    rows.push(
-      <tr key={c.id} className="border-t">
-        <td className="p-3">{c.id}</td>
-        <td className="p-3">{c.title}</td>
-        <td className="p-3">{c.status}</td>
-        <td className="p-3">
-          <span className={"px-2 py-1 rounded text-xs " + getRiskColor(c.risk_level)}>
-            {c.risk_level ? c.risk_level : "not analyzed"}
-          </span>
-        </td>
-        <td className="p-3">
-          <button
-            className="text-indigo-600 hover:underline"
-            onClick={function () {
-              props.onSelectCase(c.id);
-            }}
-          >
-            View
-          </button>
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Case Management</h2>
-      {errorMessage !== "" && (
-        <p className="bg-red-50 text-red-700 p-3 rounded mb-4">{errorMessage}</p>
-      )}
-      <div className="flex gap-4 mb-4">
-        <input
-          type="text"
-          placeholder="Search by title..."
-          className="border rounded px-3 py-2 w-72 bg-white"
-          value={searchText}
-          onChange={function (event) {
-            setSearchText(event.target.value);
-          }}
-        />
-        <select
-          className="border rounded px-3 py-2 bg-white"
-          value={statusFilter}
-          onChange={function (event) {
-            setStatusFilter(event.target.value);
-          }}
-        >
-          <option value="all">All statuses</option>
-          <option value="open">Open</option>
-          <option value="in_review">In review</option>
-          <option value="closed">Closed</option>
-        </select>
-      </div>
-      <table className="w-full bg-white rounded-lg shadow text-left text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="p-3">ID</th>
-            <th className="p-3">Title</th>
-            <th className="p-3">Status</th>
-            <th className="p-3">Risk</th>
-            <th className="p-3">Action</th>
-          </tr>
-        </thead>
-        <tbody>{rows}</tbody>
-      </table>
-      {visibleCases.length === 0 && errorMessage === "" && (
-        <p className="text-gray-500 mt-4">No cases found.</p>
-      )}
+  return <div className="panel">
+    <div className="section-row"><div><h2 className="panel-title">All cases</h2><p className="panel-subtitle">{cases.length} case record(s) in this workspace</p></div><span className="badge badge-neutral">{filtered.length} shown</span></div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <input className="form-control" placeholder="Search document title…" value={query} onChange={e=>setQuery(e.target.value)} />
+      <select className="form-control" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All statuses</option><option value="open">Open</option><option value="in_review">In review</option><option value="closed">Closed</option></select>
     </div>
-  );
+    {error && <div className="notice notice-error">{error}</div>}
+    <div className="table-wrap"><table className="data-table"><thead><tr><th>Case ID</th><th>Document</th><th>Status</th><th>Risk level</th><th>Action</th></tr></thead><tbody>
+      {filtered.map(c=><tr key={c.id}><td>#{c.id}</td><td className="font-semibold text-slate-700">{c.title}</td><td className="capitalize">{c.status.replace("_"," ")}</td><td><span className={"badge "+(c.risk_level ? "badge-"+c.risk_level : "badge-neutral")}>{c.risk_level || "Not analyzed"}</span></td><td><button className="btn btn-secondary" onClick={()=>onSelectCase(c.id)}>View case →</button></td></tr>)}
+    </tbody></table></div>
+    {!loading && filtered.length===0 && <div className="empty-state">No matching cases found.</div>}
+    {loading && <div className="empty-state">Loading case records…</div>}
+  </div>;
 }
-
 export default CaseList;

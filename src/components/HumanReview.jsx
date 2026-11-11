@@ -1,100 +1,65 @@
-import { useState, useEffect } from "react";
-import { getPendingReviews, submitReview } from "../services/api";
+import { useEffect, useState } from "react";
+import { getPendingReviews, submitReview, getApiError } from "../services/api";
 
-// The human reviewer sees each AI recommendation and approves or rejects it.
 function HumanReview() {
-  const [reviews, setReviews] = useState([]);
-  const [comments, setComments] = useState({}); // one comment per case id
+  const [items, setItems] = useState([]);
+  const [comments, setComments] = useState({});
+  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(null);
 
-  async function loadReviews() {
+  async function load() {
+    setError("");
+    try { setItems(await getPendingReviews()); }
+    catch (e) { setError(getApiError(e, "Could not load pending reviews.")); }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function decide(id, decision) {
+    const comment = (comments[id] || "").trim();
+    if (comment.length < 3) {
+      setError("Add a reviewer comment of at least 3 characters before recording a decision.");
+      return;
+    }
+    setBusy(id); setError(""); setMessage("");
     try {
-      const data = await getPendingReviews();
-      setReviews(data);
-    } catch (error) {
-      setMessage("Could not load pending reviews. Is the backend running?");
-    }
-  }
-
-  useEffect(function () {
-    loadReviews();
-  }, []);
-
-  function handleCommentChange(caseId, text) {
-    const newComments = { ...comments };
-    newComments[caseId] = text;
-    setComments(newComments);
-  }
-
-  async function handleDecision(caseId, decision) {
-    let comment = comments[caseId];
-    if (comment === undefined) {
-      comment = "";
-    }
-    try {
-      await submitReview(caseId, decision, comment);
-      setMessage("Case #" + caseId + " was " + decision + ".");
-      loadReviews(); // reload the list so the finished case disappears
-    } catch (error) {
-      setMessage("Could not save the review.");
-    }
-  }
-
-  const cards = [];
-  for (let i = 0; i < reviews.length; i++) {
-    const r = reviews[i];
-    cards.push(
-      <div key={r.case_id} className="bg-white p-5 rounded-lg shadow mb-4">
-        <h3 className="font-bold">
-          Case #{r.case_id}: {r.title}
-        </h3>
-        <p className="text-sm mt-2">
-          <strong>AI recommendation:</strong> {r.ai_recommendation}
-        </p>
-        <p className="text-sm mt-1">
-          <strong>Risk score:</strong> {r.risk_score}
-        </p>
-        <p className="text-sm mt-1">
-          <strong>Explanation:</strong> {r.explanation}
-        </p>
-        <textarea
-          className="border rounded w-full p-2 mt-3 text-sm"
-          placeholder="Reviewer comment (optional)"
-          value={comments[r.case_id] === undefined ? "" : comments[r.case_id]}
-          onChange={function (event) {
-            handleCommentChange(r.case_id, event.target.value);
-          }}
-        />
-        <div className="mt-3">
-          <button
-            className="bg-green-600 text-white px-4 py-2 rounded mr-2"
-            onClick={function () {
-              handleDecision(r.case_id, "approved");
-            }}
-          >
-            Approve
-          </button>
-          <button
-            className="bg-red-600 text-white px-4 py-2 rounded"
-            onClick={function () {
-              handleDecision(r.case_id, "rejected");
-            }}
-          >
-            Reject
-          </button>
-        </div>
-      </div>
-    );
+      await submitReview(id, decision, comment);
+      setMessage("Case #" + id + " marked " + decision + ". The review was saved.");
+      await load();
+    } catch (e) { setError(getApiError(e, "Could not save this review.")); }
+    finally { setBusy(null); }
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-6">Human Review</h2>
-      {message !== "" && <p className="bg-blue-50 text-blue-700 p-3 rounded mb-4">{message}</p>}
-      {cards}
-      {reviews.length === 0 && <p className="text-gray-500">No pending reviews.</p>}
+    <div className="panel">
+      <div className="section-row">
+        <div><h2 className="panel-title">Pending human decisions</h2><p className="panel-subtitle">Review document-specific checks and record your final decision.</p></div>
+        <span className="badge badge-neutral">{items.length} pending</span>
+      </div>
+      {error && <div className="notice notice-error" role="alert">{error}</div>}
+      {message && <div className="notice notice-success" role="status">{message}</div>}
+      {items.map((item) => (
+        <article className="review-card" key={item.case_id}>
+          <div className="section-row">
+            <div><p className="eyebrow">CASE #{item.case_id} · {item.document_type}</p><h3 className="panel-title">{item.title}</h3></div>
+            <span className={"badge " + (item.risk_level === "high" ? "badge-high" : item.risk_level === "medium" ? "badge-medium" : item.risk_level === "low" ? "badge-low" : "badge-neutral")}>
+              {item.risk_score == null ? "Unclassified" : "Completeness gaps " + item.risk_score + "%"}
+            </span>
+          </div>
+          <p className="review-recommendation"><strong>System guidance:</strong> {item.ai_recommendation}</p>
+          <p className="review-explanation">{item.explanation}</p>
+          {item.missing_information?.length > 0 && <p className="review-missing"><strong>Fields to verify:</strong> {item.missing_information.join(", ")}</p>}
+          <label className="review-label" htmlFor={"review-comment-" + item.case_id}>Reviewer comment <span>Required</span></label>
+          <textarea id={"review-comment-" + item.case_id} className="form-control" rows="3" minLength="3" maxLength="1000" placeholder="Explain the evidence supporting your decision…" value={comments[item.case_id] || ""} onChange={e => setComments(previous => ({ ...previous, [item.case_id]: e.target.value }))} />
+          <div className="review-actions">
+            <button className="btn btn-success" disabled={busy === item.case_id || (comments[item.case_id] || "").trim().length < 3} onClick={() => decide(item.case_id, "approved")}>{busy === item.case_id ? "Saving…" : "Approve"}</button>
+            <button className="btn btn-danger" disabled={busy === item.case_id || (comments[item.case_id] || "").trim().length < 3} onClick={() => decide(item.case_id, "rejected")}>{busy === item.case_id ? "Saving…" : "Reject"}</button>
+          </div>
+        </article>
+      ))}
+      {!items.length && !error && <div className="empty-state">No cases are waiting for review.</div>}
     </div>
   );
 }
-
 export default HumanReview;

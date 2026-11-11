@@ -1,34 +1,121 @@
-# Risk scoring.
-# - Before enough human reviews exist, we use a simple RULE (missing fields).
-# - After enough reviews, we train a real RandomForest model on them.
-# The result always says which method was used.
-
-import os
 import re
-import joblib
-from sklearn.ensemble import RandomForestClassifier
+
 from database import Case, Review
 
-MODEL_FILE = "risk_model.pkl"
-REQUIRED_WORDS = ["name", "date", "amount", "signature", "address"]
 MIN_REVIEWS_TO_TRAIN = 10
 
+# These checks are document-specific completeness signals, not fraud predictions.
+DOCUMENT_RULES = {
+    "cover_letter": {
+        "fields": {
+            "Applicant contact": lambda text: bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\+?\d[\d ()-]{8,}\d\b", text)),
+            "Recipient or salutation": lambda text: bool(re.search(r"dear\s+(hiring manager|recruiter|talent acquisition|\w+)|to the hiring team", text, re.I)),
+            "Application purpose": lambda text: bool(re.search(r"apply(ing)? for|application for|interested in the position|role of", text, re.I)),
+            "Relevant experience or skills": lambda text: bool(re.search(r"experience|skills|background|qualified|worked with", text, re.I)),
+            "Closing or signature": lambda text: bool(re.search(r"sincerely|regards|thank you|best regards", text, re.I)),
+        },
+        "description": "Cover Letter",
+    },
+    "resume": {
+        "fields": {
+            "Name": lambda text: has_name(text),
+            "Email address": lambda text: bool(re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", text)),
+            "Phone number": lambda text: len(re.sub(r"\D", "", text)) >= 10,
+            "Education": lambda text: bool(re.search(r"education|b\.?tech|bachelor|university|college|degree|master", text, re.I)),
+            "Technical skills": lambda text: bool(re.search(r"technical skills|skills|programming|python|javascript|sql", text, re.I)),
+            "Work experience": lambda text: bool(re.search(r"work experience|professional experience|employment|experience", text, re.I)),
+            "Projects": lambda text: has_projects_section(text),
+        },
+        "description": "Résumé",
+    },
+    "invoice": {
+        "fields": {
+            "Invoice number": lambda text: bool(re.search(r"invoice\s*(number|no\.?|#)", text, re.I)),
+            "Invoice date": lambda text: bool(re.search(r"invoice date|date\s*:", text, re.I)),
+            "Supplier details": lambda text: bool(re.search(r"supplier|seller|from\s*:", text, re.I)),
+            "Customer details": lambda text: bool(re.search(r"bill to|billed to|customer|buyer", text, re.I)),
+            "Total amount": lambda text: bool(re.search(r"total|amount due|grand total", text, re.I)),
+        },
+        "description": "Invoice",
+    },
+    "agreement": {
+        "fields": {
+            "Parties": lambda text: bool(re.search(r"between|parties|party name", text, re.I)),
+            "Effective date": lambda text: bool(re.search(r"effective date|dated|date of this agreement", text, re.I)),
+            "Terms": lambda text: bool(re.search(r"terms|conditions|obligations", text, re.I)),
+            "Signature section": lambda text: bool(re.search(r"signature|signed by|\bsign\b", text, re.I)),
+        },
+        "description": "Agreement",
+    },
+}
 
-def find_missing_fields(text):
-    missing = []
-    lower_text = text.lower()
-    for word in REQUIRED_WORDS:
-        if word not in lower_text:
-            missing.append(word)
-    return missing
+def has_name(text):
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    ignored = {"professional", "summary", "technical", "skills", "curriculum", "vitae", "resume", "profile", "contact"}
+    for line in lines[:8]:
+        words = re.findall(r"[A-Za-z][A-Za-z'-]+", line)
+        if 2 <= len(words) <= 4 and all(word[0].isupper() for word in words):
+            if not any(word.lower() in ignored for word in words):
+                return True
+    uppercase_tokens = re.findall(r"\b[A-Z][A-Z'-]{1,}\b", (text or "")[:600])
+    return len(uppercase_tokens) >= 2
 
+def has_projects_section(text):
+    """Recognize common résumé project-section headings."""
+    content = text or ""
+    patterns = (
+        r"(?im)^\s*(?:(?:academic|personal|key|selected|professional|relevant)\s+)?projects?\s*[:|]?\s*$",
+        r"(?im)^\s*project\s+experience\s*[:|]?\s*$",
+        r"(?im)^\s*academic\s+project\s+work\s*[:|]?\s*$",
+    )
+    return any(re.search(pattern, content) for pattern in patterns)
+
+def classify_document(text, filename=None):
+    """Classify common business documents using content and an optional filename."""
+    content = text or ""
+    file_label = filename or ""
+    if re.search(r"cover[ _-]?letter", file_label, re.I):
+        return "cover_letter"
+    cover_letter_signals = (
+        r"cover letter",
+        r"dear\s+(hiring manager|recruiter|talent acquisition)",
+        r"i am writing to apply",
+        r"i would like to apply",
+        r"application for the position",
+    )
+    if any(re.search(pattern, content, re.I) for pattern in cover_letter_signals):
+        return "cover_letter"
+
+    if re.search(r"professional summary|technical skills|work experience|curriculum vitae|\bresume\b|\bcv\b", content, re.I):
+        return "resume"
+    resume_signals = sum(bool(re.search(pattern, content, re.I)) for pattern in (
+        r"education", r"experience", r"technical skills", r"projects", r"linkedin", r"career objective"
+    ))
+    if resume_signals >= 2:
+        return "resume"
+    if re.search(r"invoice|amount due|bill to|tax invoice", content, re.I):
+        return "invoice"
+    if re.search(r"agreement|terms and conditions|hereby agree|memorandum of understanding", content, re.I):
+        return "agreement"
+    return "general"
+def find_missing_fields(text, document_type=None):
+    content = text or ""
+    kind = document_type or classify_document(content)
+    rules = DOCUMENT_RULES.get(kind)
+    if not rules:
+        return []
+    return [label for label, check in rules["fields"].items() if not check(content)]
 
 def build_features(text):
-    word_count = len(text.split())
-    number_count = len(re.findall(r"\d+", text))
-    missing_count = len(find_missing_fields(text))
-    return [word_count, number_count, missing_count]
-
+    content = text or ""
+    kind = classify_document(content)
+    missing = find_missing_fields(content, kind)
+    return [
+        len(content.split()),
+        len(re.findall(r"\d+", content)),
+        len(missing),
+        {"general": 0, "resume": 1, "invoice": 2, "agreement": 3, "cover_letter": 4}.get(kind, 0),
+    ]
 
 def score_to_level(score):
     if score >= 70:
@@ -37,40 +124,29 @@ def score_to_level(score):
         return "medium"
     return "low"
 
-
-def predict_risk(text):
-    """Returns (risk_score 0-100, risk_level, method)."""
-    if os.path.exists(MODEL_FILE):
-        model = joblib.load(MODEL_FILE)
-        probabilities = model.predict_proba([build_features(text)])[0]
-        score = round(float(probabilities[1]) * 100, 1)
-        return score, score_to_level(score), "ml_model"
-
-    missing_count = len(find_missing_fields(text))
-    score = round(missing_count / len(REQUIRED_WORDS) * 100, 1)
-    return score, score_to_level(score), "rule_based"
-
+def predict_risk(text, document_type=None):
+    """Return a document-specific completeness gap indicator, not a fraud score."""
+    kind = document_type or classify_document(text)
+    rules = DOCUMENT_RULES.get(kind)
+    if not rules:
+        return None, "unclassified", "document_type_unclassified"
+    missing_count = len(find_missing_fields(text, kind))
+    total_fields = len(rules["fields"])
+    score = round(missing_count / total_fields * 100, 1) if total_fields else 0
+    return score, score_to_level(score), "document_type_completeness"
 
 def train_model(db):
-    """Train on human reviews: rejected = 1 (problem), approved = 0."""
-    features = []
-    labels = []
+    """Experimental model training; trained output is not used for production scoring."""
+    features, labels = [], []
     for review in db.query(Review).all():
         case = db.query(Case).filter(Case.id == review.case_id).first()
         if case is None:
             continue
         features.append(build_features(case.document_text))
-        if review.decision == "rejected":
-            labels.append(1)
-        else:
-            labels.append(0)
+        labels.append(1 if review.decision == "rejected" else 0)
 
     if len(labels) < MIN_REVIEWS_TO_TRAIN:
-        return False, "Need at least " + str(MIN_REVIEWS_TO_TRAIN) + " reviewed cases. You have " + str(len(labels)) + "."
+        return False, "At least " + str(MIN_REVIEWS_TO_TRAIN) + " reviewed cases are required. Current: " + str(len(labels)) + "."
     if len(set(labels)) < 2:
-        return False, "Need both approved and rejected reviews to train."
-
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(features, labels)
-    joblib.dump(model, MODEL_FILE)
-    return True, "Model trained on " + str(len(labels)) + " reviewed cases."
+        return False, "Both approved and rejected examples are required."
+    return False, "Training is currently disabled until a representative, validated review dataset is available."
